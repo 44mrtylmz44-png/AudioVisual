@@ -460,7 +460,63 @@
             pointer-events: none;
             opacity: 0.9; 
         }
-    </style>
+    
+/* İki ekran için başlığı yukarı çek ve başlık–liste boşluğunu azalt */
+#instruction-screen.active,
+#corridor-screen.active {
+  padding-top: 0.25rem;
+}
+#instruction-screen #instruction-corridor-list,
+#corridor-screen #corridor-list {
+  margin: 12px 0;
+}
+
+
+/* --- EŞİT HİZALAMA PATCHİ (başlık yükseklikleri + başlık–liste arası boşluk) --- */
+#instruction-screen h1 { 
+  min-height: 0;           /* Talimat başlığındaki 60px minimum yükseklik kaldırıldı */
+  margin-bottom: 8px;      /* Başlık altı boşluk sıkılaştırıldı */
+}
+#corridor-screen h1 {
+  margin-bottom: 8px;      /* Kapalı Koridorlar başlığı ile eşit */
+}
+#instruction-screen #instruction-corridor-list,
+#corridor-screen #corridor-list {
+  margin: 8px 0;           /* Her iki listede aynı üst/alt boşluk */
+}
+
+
+/* Alt güvenli alan (doğru seçicilerle) */
+#instruction-corridor-list,
+#corridor-list {
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  /* iOS eski WebKit için fallback */
+  padding-bottom: calc(72px + constant(safe-area-inset-bottom, 0px));
+}
+
+
+/* --- Answer screen bottom safe area + compact grid --- */
+#answer-screen.active { padding-top: 0.5rem; }
+#answer-header { margin-bottom: 0.5rem; }
+
+.city-grid-wrapper {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  /* Fallback for older iOS */
+  padding-bottom: calc(96px + constant(safe-area-inset-bottom, 0px));
+}
+
+#city-grid {
+  gap: 6px 16px;             /* dikey aralığı azalt */
+}
+#city-grid label {           /* şehir metinlerini kompaktlaştır */
+  font-size: 0.98rem;
+  line-height: 1.15;
+}
+#finish-button {             /* butonun grid üstüne binmesini önle */
+  margin-top: 8px !important;
+}
+
+</style>
 </head>
 <body>
 <!-- Audio Visual Memory App | Developer: Mustafa Bölük | https://www.linkedin.com/in/mustafa-boluk/ | Tarih: 08-2025 -->
@@ -755,31 +811,40 @@ const AUDIO_DATA_BASE64 = {
         corridorList.appendChild(borderBottom);
     }
     // Ses dosyalarını çalan fonksiyon
-    function playAudio(file) {
-        return new Promise((resolve) => {
-            let audioSrc;
-            // Eğer Base64 verisi mevcutsa onu kullan
-            if (AUDIO_DATA_BASE64[file]) {
-                audioSrc = AUDIO_DATA_BASE64[file];
-            } else {
-                // Yoksa, harici dosya yolunu kullan (bu durumda audio klasörüne ihtiyaç duyulur)
-                audioSrc = `audio/${file}.mp3`;
-                console.warn(`Base64 verisi bulunamadı, dosya yolundan deneniyor: ${audioSrc}`);
-            }
-
-            const audio = new Audio(audioSrc);
-            audio.onended = resolve; // Ses bittiğinde Promise'ı çöz
-            audio.onerror = (e) => {
-                console.error(`Ses dosyası bulunamadı veya çalınamadı: ${audioSrc}`, e);
-                resolve(); // Hata durumunda da Promise'ı çözerek oyun akışının devam etmesini sağla
-            };
-            audio.play().catch(error => {
-                // Otomatik oynatma kısıtlamaları veya başka bir sorun nedeniyle çalma hatası
-                console.warn(`Ses çalma hatası (kullanıcı etkileşimi gerekebilir veya dosya eksik): ${audioSrc}`, error);
-                resolve(); // Hata durumunda Promise'ı çözerek oyun akışının devam etmesini sağla
-            });
-        });
+    
+// --- Shared audio player for iOS stability ---
+let PLAYER = null;
+function getPlayer() {
+    if (!PLAYER) {
+        PLAYER = new Audio();
+        PLAYER.preload = 'auto';
     }
+    return PLAYER;
+}
+
+function playAudio(file) {
+    return new Promise((resolve) => {
+        let audioSrc;
+        if (typeof AUDIO_DATA_BASE64 !== 'undefined' && AUDIO_DATA_BASE64 && AUDIO_DATA_BASE64[file]) {
+            audioSrc = AUDIO_DATA_BASE64[file];
+        } else {
+            audioSrc = `audio/${file}.mp3`;
+            console.warn(`Base64 verisi yok, dosyadan deneniyor: ${audioSrc}`);
+        }
+        const a = getPlayer();
+        a.onended = () => resolve();
+        a.onerror  = (e) => { console.error(`Ses çalınamadı: ${audioSrc}`, e); resolve(); };
+        try {
+            a.src = audioSrc;
+            a.load();
+            const p = a.play();
+            if (p && typeof p.catch === 'function') p.catch(()=>resolve());
+        } catch (e) {
+            resolve();
+        }
+    });
+}
+
 
     // Talimatları sesli olarak oynatan fonksiyon (MP3 dosyaları kullanılarak)
     async function playInstructions() {
